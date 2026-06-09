@@ -251,13 +251,9 @@ class DashComponent {
 			}
 		}
 
-		// Keymap footer
-		lines.push(
-			th.fg(
-				"dim",
-				truncateToWidth(" read-only overview", width, ""),
-			),
-		);
+		// Keymap footer (pinned to bottom of 40-line viewport)
+		while (lines.length < 39) lines.push("");
+		lines.push(th.fg("dim", truncateToWidth(" read-only overview", width, "")));
 
 		this.cachedWidth = width;
 		this.cachedLines = lines;
