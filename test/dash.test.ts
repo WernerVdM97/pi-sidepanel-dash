@@ -101,7 +101,10 @@ describe("DashComponent state", () => {
 			{ name: "read", tokens: 300, active: true },
 		];
 		const toolTotal = toolTokens.reduce((s, t) => s + t.tokens, 0);
-		const conversation = Math.max(0, tokensTotal - systemPromptTokens - toolTotal);
+		const conversation = Math.max(
+			0,
+			tokensTotal - systemPromptTokens - toolTotal,
+		);
 
 		assert.equal(conversation, 89_200);
 	});
