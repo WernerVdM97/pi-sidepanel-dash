@@ -100,7 +100,8 @@ class DashComponent {
 		this.toolTokens = allTools
 			.map((t: any) => ({
 				name: t.name,
-				tokens: est(t.description ?? "") + est(JSON.stringify(t.parameters ?? {})),
+				tokens:
+					est(t.description ?? "") + est(JSON.stringify(t.parameters ?? {})),
 				active: activeSet.has(t.name),
 			}))
 			.sort((a: ToolEntry, b: ToolEntry) => b.tokens - a.tokens);
@@ -215,19 +216,12 @@ class DashComponent {
 			// Top 5 tools by token cost
 			const topTools = this.toolTokens.slice(0, 5);
 			for (const tool of topTools) {
-				const icon = tool.active
-					? th.fg("success", " ●")
-					: th.fg("dim", " ○");
+				const icon = tool.active ? th.fg("success", " ●") : th.fg("dim", " ○");
 				const toolPct =
-					toolTotal > 0
-						? Math.round((tool.tokens / toolTotal) * 100)
-						: 0;
+					toolTotal > 0 ? Math.round((tool.tokens / toolTotal) * 100) : 0;
 				const nameW = Math.max(1, width - 24);
 				const nameDisplay = truncateToWidth(tool.name, nameW, "…", false);
-				const pctStr =
-					toolPct >= 3
-						? th.fg("dim", " (" + toolPct + "%)")
-						: "";
+				const pctStr = toolPct >= 3 ? th.fg("dim", " (" + toolPct + "%)") : "";
 				lines.push(
 					"  " +
 						icon +
@@ -256,6 +250,14 @@ class DashComponent {
 				);
 			}
 		}
+
+		// Keymap footer
+		lines.push(
+			th.fg(
+				"dim",
+				truncateToWidth(" read-only overview", width, ""),
+			),
+		);
 
 		this.cachedWidth = width;
 		this.cachedLines = lines;
