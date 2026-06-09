@@ -1,0 +1,10 @@
+{
+  "name": "pi-sidepanel-dash",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Session dashboard tab for pi-sidepanel — goal, model, turn, context budget, top tool definitions",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
