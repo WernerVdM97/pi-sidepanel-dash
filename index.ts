@@ -70,8 +70,9 @@ class DashComponent {
 
 	private theme: ThemeColors | null = null;
 
-	// cache
+	// cache (keyed by width AND height so a vertical resize re-renders)
 	private cachedWidth?: number;
+	private cachedHeight?: number;
 	private cachedLines?: string[];
 
 	constructor() {}
@@ -118,8 +119,14 @@ class DashComponent {
 
 	// ── Component interface ──────────────────────────────────────────
 
-	render(width: number): string[] {
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+	render(width: number, height = 40): string[] {
+		const H = Math.max(3, Math.floor(height));
+		if (
+			this.cachedLines &&
+			this.cachedWidth === width &&
+			this.cachedHeight === H
+		)
+			return this.cachedLines;
 
 		const th = this.theme ?? defaultTheme;
 		const lines: string[] = [];
@@ -251,8 +258,8 @@ class DashComponent {
 			}
 		}
 
-		// Keymap footer (pinned to bottom of 40-line viewport)
-		while (lines.length < 38) lines.push("");
+		// Two-line keymap footer, pinned to the bottom of the viewport.
+		while (lines.length < H - 2) lines.push("");
 		lines.push(th.fg("dim", truncateToWidth(" read-only overview", width, "")));
 		lines.push(
 			th.fg(
@@ -266,12 +273,14 @@ class DashComponent {
 		);
 
 		this.cachedWidth = width;
+		this.cachedHeight = H;
 		this.cachedLines = lines;
 		return lines;
 	}
 
 	invalidate(): void {
 		this.cachedWidth = undefined;
+		this.cachedHeight = undefined;
 		this.cachedLines = undefined;
 	}
 }
@@ -291,8 +300,8 @@ export default function (pi: ExtensionAPI) {
 				handleInput(): void {
 					// Read-only display — no input handling needed
 				},
-				render(width: number): string[] {
-					return dash.render(width);
+				render(width: number, height?: number): string[] {
+					return dash.render(width, height);
 				},
 				invalidate(): void {
 					dash.invalidate();
