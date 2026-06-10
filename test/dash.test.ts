@@ -1,33 +1,22 @@
 /**
  * pi-sidepanel-dash unit tests
  *
- * Tests data model, token estimation, percentage bars,
- * and render output shape.
+ * Tests the REAL data model and rendering from ../dash.ts (no mirrors):
+ * token estimation, percentage bars, state, and render output shape.
  *
  * Run: node --test test/dash.test.ts
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { DashComponent, est, fmtTokens, pctBar } from "../dash.ts";
+import { truncateToWidth } from "./_harness/pi-tui-stub.mjs";
 
-// ── Inline copies (avoid module resolution) ───────────────────────────────
-
-function est(s: string): number {
-	return Math.ceil(s.length / 4);
+function makeDash(): DashComponent {
+	return new DashComponent({ truncateToWidth });
 }
 
-function fmtTokens(n: number): string {
-	if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-	if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-	return String(n);
-}
-
-function pctBar(pct: number, w: number): string {
-	const f = Math.round((pct / 100) * w);
-	return "█".repeat(f) + "░".repeat(w - f);
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────
+// ── Pure helpers ──────────────────────────────────────────────────────────
 
 describe("token estimation", () => {
 	it("est returns chars÷4 rounded up", () => {
@@ -70,88 +59,131 @@ describe("percentage bar", () => {
 		assert.equal(pctBar(34, 3), "█░░"); // 34% of 3 = 1.02 → 1
 		assert.equal(pctBar(67, 3), "██░"); // 67% of 3 = 2.01 → 2
 	});
+
+	it("pctBar clamps out-of-range percentages (regression: >100% threw)", () => {
+		assert.equal(pctBar(500, 5), "█████");
+		assert.equal(pctBar(-10, 5), "░░░░░");
+	});
 });
+
+// ── DashComponent state ───────────────────────────────────────────────────
 
 describe("DashComponent state", () => {
 	it("starts with default values", () => {
-		// Mirror DashComponent defaults
-		const state = {
-			goal: "",
-			model: "—",
-			turn: 0,
-			thinkingLevel: "off",
-			tokensTotal: 0,
-			contextWindow: 200_000,
-			systemPromptTokens: 0,
-			toolTokens: [] as { name: string; tokens: number; active: boolean }[],
-			conversationTokens: 0,
-		};
-
-		assert.equal(state.goal, "");
-		assert.equal(state.model, "—");
-		assert.equal(state.turn, 0);
-		assert.equal(state.tokensTotal, 0);
+		const dash = makeDash();
+		assert.equal(dash.goal, "");
+		assert.equal(dash.model, "—");
+		assert.equal(dash.turn, 0);
+		assert.equal(dash.thinkingLevel, "off");
+		assert.equal(dash.tokensTotal, 0);
+		assert.equal(dash.contextWindow, 200_000);
+		assert.deepEqual(dash.toolTokens, []);
 	});
 
-	it("conversation tokens computed as remainder", () => {
-		const tokensTotal = 100_000;
-		const systemPromptTokens = 10_000;
-		const toolTokens = [
+	it("reset restores defaults", () => {
+		const dash = makeDash();
+		dash.goal = "do things";
+		dash.model = "x/y";
+		dash.turn = 7;
+		dash.tokensTotal = 5;
+		dash.reset();
+		assert.equal(dash.goal, "");
+		assert.equal(dash.model, "—");
+		assert.equal(dash.turn, 0);
+		assert.equal(dash.tokensTotal, 0);
+	});
+
+	it("collectToolInfo estimates, marks active, sorts descending", () => {
+		const dash = makeDash();
+		dash.collectToolInfo({
+			getAllTools: () => [
+				{ name: "small", description: "abcd", parameters: {} },
+				{ name: "large", description: "x".repeat(4000), parameters: {} },
+				{ name: "medium", description: "y".repeat(400), parameters: {} },
+			],
+			getActiveTools: () => ["medium"],
+		});
+
+		assert.deepEqual(
+			dash.toolTokens.map((t) => t.name),
+			["large", "medium", "small"],
+		);
+		assert.equal(dash.toolTokens.find((t) => t.name === "medium")!.active, true);
+		assert.equal(dash.toolTokens.find((t) => t.name === "large")!.active, false);
+	});
+});
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+
+describe("DashComponent render", () => {
+	it("shows session info and empty-context placeholder", () => {
+		const dash = makeDash();
+		dash.model = "anthropic/claude";
+		const lines = dash.render(60, 20);
+		assert.ok(lines.some((l) => l.includes("Model: anthropic/claude")));
+		assert.ok(lines.some((l) => l.includes("No context data yet")));
+	});
+
+	it("shows the goal when set", () => {
+		const dash = makeDash();
+		dash.goal = "Fix the\nparser bug";
+		const lines = dash.render(60, 20);
+		assert.ok(lines.some((l) => l.includes("Goal")));
+		// Newlines collapsed into one line
+		assert.ok(lines.some((l) => l.includes("Fix the parser bug")));
+	});
+
+	it("computes conversation tokens as the remainder", () => {
+		const dash = makeDash();
+		dash.tokensTotal = 100_000;
+		dash.systemPromptTokens = 10_000;
+		dash.toolTokens = [
 			{ name: "bash", tokens: 500, active: false },
 			{ name: "read", tokens: 300, active: true },
 		];
-		const toolTotal = toolTokens.reduce((s, t) => s + t.tokens, 0);
-		const conversation = Math.max(
-			0,
-			tokensTotal - systemPromptTokens - toolTotal,
-		);
-
-		assert.equal(conversation, 89_200);
+		dash.render(60, 30);
+		assert.equal(dash.conversationTokens, 89_200);
 	});
 
 	it("conversation tokens floor at 0", () => {
-		const conversation = Math.max(0, 1000 - 5000 - 0);
-		assert.equal(conversation, 0);
-	});
-});
-
-describe("percentage calculations", () => {
-	it("system prompt percentage", () => {
-		const total = 100_000;
-		const sys = 12_000;
-		assert.equal(Math.round((sys / total) * 100), 12);
+		const dash = makeDash();
+		dash.tokensTotal = 1000;
+		dash.systemPromptTokens = 5000;
+		dash.render(60, 30);
+		assert.equal(dash.conversationTokens, 0);
 	});
 
-	it("tool percentage", () => {
-		const total = 100_000;
-		const tool = 25_000;
-		assert.equal(Math.round((tool / total) * 100), 25);
-	});
-
-	it("context window percentage", () => {
-		const used = 80_000;
-		const window = 200_000;
-		assert.equal(Math.round((used / window) * 100), 40);
-	});
-
-	it("handles zero total gracefully", () => {
-		const pct = 0 > 0 ? 0 : 0;
-		assert.equal(pct, 0);
-	});
-});
-
-describe("tool sorting", () => {
-	it("sorts by token count descending", () => {
-		const tools = [
-			{ name: "small", tokens: 100, active: false },
-			{ name: "large", tokens: 5000, active: false },
-			{ name: "medium", tokens: 500, active: false },
+	it("shows breakdown with bars and top tools", () => {
+		const dash = makeDash();
+		dash.tokensTotal = 50_000;
+		dash.systemPromptTokens = 5_000;
+		dash.toolTokens = [
+			{ name: "bash", tokens: 2_000, active: true },
+			{ name: "read", tokens: 1_000, active: false },
 		];
-		tools.sort((a, b) => b.tokens - a.tokens);
+		const lines = dash.render(60, 30);
+		assert.ok(lines.some((l) => l.includes("System:") && l.includes("5.0K")));
+		assert.ok(lines.some((l) => l.includes("Tools:") && l.includes("3.0K")));
+		assert.ok(lines.some((l) => l.includes("●") && l.includes("bash")));
+		assert.ok(lines.some((l) => l.includes("○") && l.includes("read")));
+		assert.ok(lines.some((l) => l.includes("█")));
+	});
 
-		assert.deepEqual(
-			tools.map((t) => t.name),
-			["large", "medium", "small"],
-		);
+	it("pins the two-line footer to the bottom of the viewport", () => {
+		const dash = makeDash();
+		const lines = dash.render(60, 24);
+		assert.equal(lines.length, 24);
+		assert.ok(lines[22]!.includes("read-only overview"));
+	});
+
+	it("caches by width and height; invalidate busts the cache", () => {
+		const dash = makeDash();
+		const first = dash.render(60, 20);
+		dash.turn = 9;
+		assert.equal(dash.render(60, 20), first, "same w/h → cached array");
+		assert.notEqual(dash.render(50, 20), first, "width change re-renders");
+		dash.invalidate();
+		const fresh = dash.render(50, 20);
+		assert.ok(fresh.some((l) => l.includes("Turn:  9")));
 	});
 });
